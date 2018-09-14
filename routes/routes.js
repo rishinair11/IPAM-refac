@@ -127,9 +127,7 @@ router.post('/allocate', (req, res, next) => {
                         cidr: req.body.cidr
                     }
 
-                    console.log(availableIPs);
-
-                    for (ip of availableIPs) {
+                    availableIPs.forEach(ip => {
                         newIP.ipaddress = newUserIP.ipaddress = ip;
 
                         ipams.updateOne({
@@ -157,7 +155,7 @@ router.post('/allocate', (req, res, next) => {
                                 console.log(currentUser.owner + ' ' + ip + 'users');
                             }
                         });
-                    }
+                    });
                 }
             });
         }

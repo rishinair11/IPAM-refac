@@ -25,8 +25,7 @@ function allocateIP(currentNetwork, cidr, count) {
         }
     }
     
-    return allocatedIPs;
-    
+    return allocatedIPs;   
 }
 
 module.exports = allocateIP;
