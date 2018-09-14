@@ -161,7 +161,56 @@ router.post('/allocate', (req, res, next) => {
         }
     });
 
+});
 
-})
+router.post('/free', (req, res, next) => {
+    var currentUser;
+    users.findOne({
+        owner: req.body.username
+    }, (err, result) => {
+        if (err) throw err;
+        else if (!result) res.json({
+            error: "User not found"
+        });
+        else {
+            currentUser = result;
+            users.updateOne({
+                owner: currentUser.owner
+            }, {
+                $set: {
+                    pool: []
+                }
+            }, (err, result) => {
+                if (err) throw err;
+                else {
+                    ipams.update({
+                        network_id: req.body.network_id
+                    }, {
+                        $pull: {
+                            ip_pool: {
+                                owner: currentUser.owner
+                            }
+                        }
+                    }, (err, result) => {
+                        if (err) throw err;
+                        else if (!result) res.json({
+                            error: "Network not found"
+                        });
+                        else {
+                            res.json({
+                                success: "User de-allocated from network",
+                                owner: currentUser.owner,
+                                network: req.body.network_id
+                            });
+                        }
+                    });
+                }
+            });
+
+
+
+        }
+    });
+});
 
 module.exports = router;
