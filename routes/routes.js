@@ -221,7 +221,7 @@ router.post('/allocate', (req, res, next) => {
 
 });
 
-router.post('/assign', (req, res, next) => {
+router.post('/assignment', (req, res, next) => {
     users.findOne({
         owner: req.body.username
     }, (err, result) => {
@@ -241,7 +241,7 @@ router.post('/assign', (req, res, next) => {
             for (pool of currentNetwork.ip_pool) {
                 if (requestedIp === pool.ipaddress) {
                     assignIps.push(requestedIp);
-                    pool.in_use = true;
+                    pool.in_use = req.body.assign;
                 }
             }
         }
@@ -255,7 +255,7 @@ router.post('/assign', (req, res, next) => {
                 'ip_pool.ipaddress': ip
             }, {
                 $set: {
-                    'ip_pool.$.in_use': true
+                    'ip_pool.$.in_use': req.body.assign
                 }
             }, (err, result) => {
                 if (err) res.json({
