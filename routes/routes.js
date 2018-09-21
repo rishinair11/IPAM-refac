@@ -13,7 +13,9 @@ router.get('/getUser', (req, res, next) => {
     users.findOne({
         owner: req.query.username
     }, (err, result) => {
-        if (err) throw err;
+        if (err) res.json({
+            error: err
+        });
         else if (!result) res.json({
             error: "User not found"
         });
@@ -25,7 +27,9 @@ router.get('/getUser', (req, res, next) => {
 
 router.get('/getNetworks', (req, res, next) => {
     ipams.find({}, (err, result) => {
-        if (err) throw err;
+        if (err) res.json({
+            error: err
+        });
         else if (!result)
             res.json({
                 error: "No networks available"
@@ -40,7 +44,9 @@ router.get('/getNetwork', (req, res, next) => {
     ipams.find({
         network_id: req.query.network_id
     }, (err, result) => {
-        if (err) throw err;
+        if (err) res.json({
+            error: err
+        });
         else if (!result)
             res.json({
                 error: "Network not found"
@@ -63,7 +69,9 @@ router.post('/register', (req, res, next) => {
     });
 
     newUser.save((err, result) => {
-        if (err) throw err;
+        if (err) res.json({
+            error: err
+        });
         else {
             res.json(result);
         }
@@ -79,7 +87,9 @@ router.post('/addNetwork', (req, res, next) => {
     });
 
     newNetwork.save((err, result) => {
-        if (err) throw err;
+        if (err) res.json({
+            error: err
+        });
         else {
             res.json(result);
         }
@@ -95,7 +105,9 @@ router.post('/allocate', (req, res, next) => {
     users.findOne({
         owner: req.body.username,
     }, (err, result) => {
-        if (err) throw err;
+        if (err) res.json({
+            error: err
+        });
         else {
             //if user exists, store his data
             currentUser = result;
@@ -119,7 +131,7 @@ router.post('/allocate', (req, res, next) => {
                 currentUser = newUser;
             }
 
-            
+
 
             //if network is not present in users schema, then create new network with empty ip_pool
             var networkExists = false;
@@ -321,7 +333,9 @@ router.post('/free', (req, res, next) => {
     users.findOne({
         owner: req.body.username
     }, (err, result) => {
-        if (err) throw err;
+        if (err) res.json({
+            error: err
+        });
         else if (!result) res.json({
             error: "User not found"
         });
@@ -334,7 +348,9 @@ router.post('/free', (req, res, next) => {
                     pool: []
                 }
             }, (err, result) => {
-                if (err) throw err;
+                if (err) res.json({
+                    error: err
+                });
                 else {
                     ipams.update({
                         network_id: req.body.network_id
@@ -345,7 +361,9 @@ router.post('/free', (req, res, next) => {
                             }
                         }
                     }, (err, result) => {
-                        if (err) throw err;
+                        if (err) res.json({
+                            error: err
+                        });
                         else if (!result) res.json({
                             error: "Network not found"
                         });
