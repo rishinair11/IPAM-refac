@@ -5,7 +5,6 @@
 - NodeJS
 - Express
 - Mongoose (for MongoDB)
-- Netmask (for CIDR range calculation)
     
 
 ##  Use cases:
