@@ -111,12 +111,18 @@ router.post('/allocate', (req, res, next) => {
         else {
             //if user exists, store his data
             currentUser = result;
+
             if (!result) {
-                // null check for user, create new user if new user.
+                var pushNetwork = {
+                    network_id: req.body.network_id,
+                    subnet_mask: req.body.subnet_mask,
+                    ip_pool: []
+                }
+                // null check for user, create new user if new user. also add new network details while you're at it
                 let newUser = new users({
                     owner: req.body.username,
                     admin: true,
-                    networks: []
+                    networks: [pushNetwork]
                 });
 
                 newUser.save((err, result) => {
@@ -141,7 +147,7 @@ router.post('/allocate', (req, res, next) => {
                     break;
                 }
             }
-
+            //this is for existing user but new network
             if (!networkExists) {
                 var pushNetwork = {
                     network_id: req.body.network_id,
@@ -328,64 +334,51 @@ router.post('/assignment', (req, res, next) => {
 });
 
 
-router.post('/free', (req, res, next) => {
-    var currentUser;
-    users.findOne({
-        owner: req.body.username
-    }, (err, result) => {
-        if (err) res.json({
-            error: err
-        });
-        else if (!result) res.json({
-            error: "User not found"
-        });
-        else {
-            currentUser = result;
-            users.updateOne({
-                owner: currentUser.owner
-            }, {
-                $set: {
-                    pool: []
-                }
-            }, (err, result) => {
-                if (err) res.json({
-                    error: err
-                });
-                else {
-                    ipams.update({
-                        network_id: req.body.network_id
-                    }, {
-                        $pull: {
-                            ip_pool: {
-                                owner: currentUser.owner
-                            }
-                        }
-                    }, (err, result) => {
-                        if (err) res.json({
-                            error: err
-                        });
-                        else if (!result) res.json({
-                            error: "Network not found"
-                        });
-                        else {
-                            res.json({
-                                success: "User de-allocated from network",
-                                owner: currentUser.owner,
-                                network: req.body.network_id
-                            });
-                        }
-                    });
-                }
+//TODO handle server crash when user deallocates IPs not in his pool
+router.post('/deallocate', (req, res, next) => {
+    req.body.arrayIP.forEach(ip => {
+        users.findOne({
+            owner: req.body.username
+        }, async (err, result) => {
+            if (err) res.json({
+                error: err
             });
+            else if (!result) res.json({
+                error: "Invalid User"
+            });
+            else {
+                var currentUser = result;
+                await ipams.updateOne({
+                    network_id: req.body.network_id
+                }, {
+                    $pull: {
+                        ip_pool: {
+                            ipaddress: ip,
+                            owner: currentUser.owner
+                        }
+                    }
+                }, (err, result) => {
+                    console.log('ipams' + result.nModified);
+                });
 
-
-
-        }
+                await users.updateOne({
+                    owner: currentUser.owner
+                }, {
+                    $pull: {
+                        'networks.$[].ip_pool': {
+                            ipaddress : ip
+                        }
+                    }
+                }, (err, result) => {
+                    console.log('users' + result.nModified);
+                });
+            }
+        });
     });
+
 });
 
 module.exports = router;
 
-
-//ping
-//ns-lookup
+//TODO ping
+//TODO ns-lookup

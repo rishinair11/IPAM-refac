@@ -1,0 +1,12 @@
+{
+  "name": "ipam",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "start": "live-server"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "MIT"
+}
