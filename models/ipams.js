@@ -5,6 +5,7 @@ const Schema = mongoose.Schema;
 const ipamSchema = new Schema({
     network_id: String,
     subnet_mask: String,
+    cidr: String,
     ip_pool: [{
         ipaddress: String,
         owner: String,

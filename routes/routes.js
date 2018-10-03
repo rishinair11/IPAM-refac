@@ -83,6 +83,7 @@ router.post('/addNetwork', (req, res, next) => {
     let newNetwork = new ipams({
         network_id: req.body.network_id,
         subnet_mask: req.body.subnet_mask,
+        cidr: req.body.cidr,
         ip_pool: []
     });
 
@@ -116,6 +117,7 @@ router.post('/allocate', (req, res, next) => {
                 var pushNetwork = {
                     network_id: req.body.network_id,
                     subnet_mask: req.body.subnet_mask,
+                    cidr: req.body.cidr,
                     ip_pool: []
                 }
                 // null check for user, create new user if new user. also add new network details while you're at it
@@ -186,12 +188,11 @@ router.post('/allocate', (req, res, next) => {
                 var userIpObj = {
                     ipaddress: "",
                     gateway: "",
+                    cidr: req.body.cidr,
                     in_use: false,
                     hostname: "rochester",
                     pingable: true
                 }
-
-                console.log(IpsToAllocate);
 
                 IpsToAllocate.forEach(IpToAllocate => {
                     ipamIpObj.ipaddress = userIpObj.ipaddress = IpToAllocate;
@@ -230,9 +231,17 @@ router.post('/allocate', (req, res, next) => {
                         }
                     });
                 });
-                res.json({
-                    success: IpsToAllocate
-                });
+                if (IpsToAllocate) {
+                    res.json({
+                        success: IpsToAllocate
+                    });
+                }
+                else {
+                    res.json({
+                        error: IpsToAllocate
+                    });
+                }
+                
             });
         }
     });
@@ -366,7 +375,7 @@ router.post('/deallocate', (req, res, next) => {
                 }, {
                     $pull: {
                         'networks.$[].ip_pool': {
-                            ipaddress : ip
+                            ipaddress: ip
                         }
                     }
                 }, (err, result) => {
