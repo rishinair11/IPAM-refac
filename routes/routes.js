@@ -5,6 +5,7 @@ const users = require('../models/users');
 const ipams = require('../models/ipams');
 
 const allocateIP = require('../utils/allocateIP');
+const assignIP = require('../utils/assignIP');
 
 const MAX_IPS = 10;
 
@@ -248,80 +249,65 @@ router.post('/allocate', (req, res, next) => {
 
 });
 
-router.post('/assignment', (req, res, next) => {
+router.post('/assign', (req, res, next) => {
     users.findOne({
         owner: req.body.username
     }, (err, result) => {
         var currentUser = result;
-        var currentNetwork = undefined;
+        var currentUserNetwork = undefined;
         var assignIps = [];
-
+        var insufficientIP = '';
+        var emptyPool = '';
         //will get the network to be worked on currently
         for (network of currentUser.networks) {
             if (network.network_id === req.body.network_id)
-                currentNetwork = network;
+                currentUserNetwork = network;
         }
-
-
-        //will populate the assignIps array and edit the new Network object
-        for (requestedIp of req.body.arrayIP) {
-            for (pool of currentNetwork.ip_pool) {
-                if (requestedIp === pool.ipaddress) {
-                    assignIps.push(requestedIp);
-                    pool.in_use = req.body.assign;
+        var IpToAssign = [];
+        IpToAssign = assignIP(currentUserNetwork, req.body.count);
+        if (IpToAssign) {
+            if (IpToAssign.length > 0) {
+                //will populate the assignIps array and edit the Network object of user
+                for (requestedIp of IpToAssign) {
+                    for (pool of currentUserNetwork.ip_pool) {
+                        if (requestedIp === pool.ipaddress) {
+                            assignIps.push(requestedIp);
+                            pool.in_use = true;
+                        }
+                    }
                 }
-            }
-        }
-
-        console.log(currentNetwork);
-
-
-        assignIps.forEach(ip => {
-            //update the IPAMS collection
-            ipams.updateOne({
-                'ip_pool.ipaddress': ip
-            }, {
-                $set: {
-                    'ip_pool.$.in_use': req.body.assign
-                }
-            }, (err, result) => {
-                if (err) res.json({
-                    error: err
+                ipams.findOne({
+                    network_id: req.body.network_id
+                }, (err, result) => {
+                    assignIps.forEach(ip => {
+                        //update the IPAMS collection
+                        ipams.updateOne({
+                            'ip_pool.ipaddress': ip
+                        }, {
+                            $set: {
+                                'ip_pool.$.in_use': true
+                            }
+                        }, (err, result) => {
+                            if (err) res.json({
+                                error: err
+                            });
+                            else if (!result) res.json({
+                                error: 'No such IP found'
+                            });
+                            else {
+                                console.log('ipams collection updated -> ' + result);
+                            }
+                        });
+                    });
                 });
-                else if (!result) res.json({
-                    error: 'No such IP found'
-                });
-                else {
-                    console.log('ipams collection updated -> ' + result);
-                }
-            });
-
-        });
-
-        //pull old network
-        users.updateOne({
-            owner: currentUser.owner
-        }, {
-            $pull: {
-                networks: {
-                    network_id: currentNetwork.network_id
-                }
-            }
-        }, (err, result) => {
-            if (err) res.json({
-                error: err
-            });
-            else if (!result) res.json({
-                error: 'No such user found'
-            });
-            else {
-
-                //push new network
+                //pull old network
                 users.updateOne({
                     owner: currentUser.owner
                 }, {
-                    $push: {
-                        networks: currentNetwork
+                    $pull: {
+                        networks: {
+                            network_id: currentUserNetwork.network_id
+                        }
                     }
                 }, (err, result) => {
                     if (err) res.json({
@@ -331,13 +317,183 @@ router.post('/assignment', (req, res, next) => {
                         error: 'No such user found'
                     });
                     else {
-                        console.log(result);
+                        //push new network
+                        users.updateOne({
+                            owner: currentUser.owner
+                        }, {
+                            $push: {
+                                networks: currentUserNetwork
+                            }
+                        }, (err, result) => {
+                            if (err) res.json({
+                                error: err
+                            });
+                            else if (!result) res.json({
+                                error: 'No such user found'
+                            });
+                            else {
+                                console.log('users collection updated')
+                            }
+                        });
                     }
                 });
+            } else {
+                insufficientIP = 'Requested no of IPs are more than existing free ips in pool'
+                //console.log('Requested no of IPS are more than existing free ips in pool');
             }
-        });
+        } else {
+            emptyPool = 'No free ips in your pool'
+            //console.log('There are no free ips in  your current pool');
+        }
+        if (IpToAssign) {
+            if (IpToAssign.length > 0) {
+                res.json({
+                    success: IpToAssign
+                });
+            } else {
+                res.json({
+                    error: insufficientIP
+                })
+            }
+        } else {
+            res.json({
+                error: emptyPool
+            });
+        }
+    });
+});
+//write the logic of checking whether already ips are deassigned or not.
+router.post('/deassign', (req, res, next) => {
+    users.findOne({
+        owner: req.body.username
+    }, (err, result) => {
+        var currentUser = result;
+        var currentNetwork = undefined;
+        var deassignIps = [];
+        var noIPrange = '';
+        var emptyIPrange = '';
 
+        //will get the network to be worked on currently
+        for (network of currentUser.networks) {
+            if (network.network_id === req.body.network_id)
+                currentNetwork = network;
+        }
+        var IpToDeassign = req.body.deassignIp;
+        var invalidIP = undefined;
+        if (IpToDeassign) {
+            if (IpToDeassign.length > 0) {
+                //will populate the deassignIps array and edit the new Network object of User
+                for (requestedIp of IpToDeassign) {
+                    for (pool of currentNetwork.ip_pool) {
+                        if (requestedIp === pool.ipaddress) {
+                            deassignIps.push(requestedIp);
+                            pool.in_use = false;
+                        }
+                    }
+                }
 
+                if (deassignIps.length > 0 && deassignIps.length === IpToDeassign.length) {
+                    invalidIP = false
+                } else {
+                    invalidIP = "IP range provided does not belong to users pool"
+                }
+                if (!invalidIP) {
+                    ipams.findOne({
+                        network_id: req.body.network_id
+                    }, (err, result) => {
+                        deassignIps.forEach(ip => {
+                            //update the IPAMS collection
+                            ipams.updateOne({
+                                'ip_pool.ipaddress': ip
+                            }, {
+                                $set: {
+                                    'ip_pool.$.in_use': false
+                                }
+                            }, (err, result) => {
+                                console.log("ipam" + result)
+                                if (err) res.json({
+                                    error: err
+                                });
+                                else if (!result) res.json({
+                                    error: 'No such IP found'
+                                });
+                                else {
+                                    console.log('ipams collection updated -> ' + result);
+                                }
+                            });
+
+                        });
+                    });
+
+                    //pull old network
+                    users.updateOne({
+                        owner: currentUser.owner
+                    }, {
+                        $pull: {
+                            networks: {
+                                network_id: currentNetwork.network_id
+                            }
+                        }
+                    }, (err, result) => {
+                        if (err) res.json({
+                            error: err
+                        });
+                        else if (!result) res.json({
+                            error: 'No such user found'
+                        });
+                        else {
+                            //push new network
+                            users.updateOne({
+                                owner: currentUser.owner
+                            }, {
+                                $push: {
+                                    networks: currentNetwork
+                                }
+                            }, (err, result) => {
+                                if (err) res.json({
+                                    error: err
+                                });
+                                else if (!result) res.json({
+                                    error: 'No such user found'
+                                });
+                                else {
+                                    console.log('Users collection updated successfully');
+                                }
+                            });
+                        }
+                    });
+                }
+            } else {
+                emptyIPrange = 'IP range cannot be empty for deassignment';
+                //console.log('IP range cannot be empty.');
+            }
+        } else {
+            noIPrange = 'Please provide IP range for deassignment'
+            //console.log('Please provide IP range for deassignment');
+        }
+
+        if (!invalidIP) {
+            if (IpToDeassign) {
+                if(IpToDeassign.length > 0){
+                res.json({
+                    success: 'IPs are successfully deassigned' +IpToDeassign
+                });
+                }
+                else{
+                    res.json({
+                        error: emptyIPrange
+                    });
+                }
+            } else {
+                res.json({
+                    error: noIPrange
+                });
+            }
+        } else {
+            res.json({
+                error: invalidIP
+            });
+        }
 
     });
 });
