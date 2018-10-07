@@ -1,6 +1,5 @@
 import React, { Component } from 'react';
-import { NavigationDrawer } from 'react-md';
-import logo from './logo.svg';
+import { Drawer, Button } from 'react-md';
 import './App.css';
 
 import WebFontLoader from 'webfontloader';
@@ -12,22 +11,38 @@ WebFontLoader.load({
 });
 
 class App extends Component {
+  constructor(props){
+    super(props);
+    this.state = {
+      visible : false
+    }
+
+    this.toggleDrawerVisiblity = this.toggleDrawerVisiblity.bind(this);
+  }
+
+  toggleDrawerVisiblity(){
+    this.setState({
+      visible: !this.state.visible
+    });
+  }
+
   render() {
     return (
-      <NavigationDrawer
-        drawerTitle="react-md with CRA"
-        toolbarTitle="Welcome to react-md"
-      >
-        <div className="App">
-          <header className="App-header">
-            <img src={logo} className="App-logo" alt="logo" />
-            <h1 className="App-title">Welcome to React</h1>
-          </header>
-          <p className="App-intro">
-            To get started, edit <code>src/App.js</code> and save to reload.
-          </p>
-        </div>
-      </NavigationDrawer>
+      <div>
+        <Drawer 
+          type={Drawer.DrawerTypes.TEMPORARY}
+          visible = {this.state.visible}
+        >
+          <Button 
+            onClick={this.toggleDrawerVisiblity}>
+              Click Me 
+          </Button>
+        </Drawer>
+        <Button 
+          onClick={this.toggleDrawerVisiblity}>
+            Click Me 
+        </Button>
+      </div>
     );
   }
 }
