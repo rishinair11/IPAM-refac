@@ -14,8 +14,22 @@
 - User can de-allocate his IPs whenever required, IPAM will update accordingly (As of now, all IPs are deleted).
 
 
-##  Currently funcitional 
+##  Currently functional 
 - Allocate IPs from existing networks. User can select desired network from the UI and send a request for IPs.
 - User can add his/her own infrastructure and static IPs as new networks. 
 - User can delete his IPs whenever required. (As of now, all IPs are deleted).
+- User can assign/deassign IPs whenever needed. 
 
+
+# IPAM-Demo (Front-end)
+
+## Technologies/Frameworks used
+
+- React & React-scripts(for prod-build)
+- Chokidar (for scss -> css conversion)
+- React-MD for Material design components
+
+## Setup
+
+For setting up React-MD with create-react-app , go to link:
+- https://github.com/mlaursen/react-md/tree/master/examples/with-create-react-app
