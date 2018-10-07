@@ -1,2 +1,4 @@
 node_modules
 package-lock.json
+ipam-demo/src/**/*.css
+ipam-demo/src/*.css
