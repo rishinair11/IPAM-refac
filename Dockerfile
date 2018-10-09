@@ -1,5 +1,9 @@
-cd root
-git clone -b api-deployment --single-branch https://github.com/rishinair11/IPAM-refac
-cd IPAM-refac
-npm install
+FROM node:8
+WORKDIR /usr/src/app
+COPY package*.json ./
+RUN npm install
+COPY . .
 
+EXPOSE 8000
+
+CMD ["npm","start"]
