@@ -1,5 +1,13 @@
 # IPAM - IP allocation manager
 
+# Usage:
+The image for this IPAM API tool can be found at:-
+https://hub.docker.com/r/nehapit/ipam/
+
+# Start the ipam api container
+`docker run --name {CONTAINER_NAME} -p {PORT_NO}:8000 -d nehapit/ipam`
+
+
 ## Technologies used:
     
 - NodeJS
