@@ -1,13 +1,11 @@
 const express = require('express');
+const dns = require('dns');
 const router = express.Router();
 
 const users = require('../models/users');
 const ipams = require('../models/ipams');
-
 const allocateIP = require('../utils/allocateIP');
 const assignIP = require('../utils/assignIP');
-
-const MAX_IPS = 10;
 
 // GET APIs
 router.get('/getUser', (req, res, next) => {
@@ -99,6 +97,68 @@ router.post('/addNetwork', (req, res, next) => {
 
 });
 
+router.post('/setHostname', async (req, res, next) => {
+    var currentNetwork, currentOwner;
+
+    //find the owner and network information of the ip to be updated. 
+    await ipams.findOne({
+        network_id: req.body.network_id
+    }, (err, result) => {
+        currentNetwork = result;
+        currentNetwork.ip_pool.forEach(address => {
+            if (address.ipaddress === req.body.ipaddress)
+                currentOwner = address.owner;
+        });
+    });
+
+    //update hostname in ipams schema directly
+    await ipams.updateOne({
+        'ip_pool.ipaddress': req.body.ipaddress
+    }, {
+        $set: {
+            'ip_pool.$.hostname': req.body.customHostname
+        }
+    }, (err, result) => {
+        if (err) res.json({
+            error: err
+        });
+        else {
+            console.log(result);
+        }
+    });
+
+    //fetch and update users
+    var userData;
+    await users.findOne({
+        owner: currentOwner
+    }, (err, result) => {
+        if (err) res.json({
+            error: err
+        });
+        else {
+            userData = result;
+            userData.networks.forEach(network => {
+                if (network.network_id === currentNetwork.network_id) {
+                    network.ip_pool.forEach(address => {
+                        if (address.ipaddress === req.body.ipaddress)
+                            address.hostname = req.body.customHostname;
+                    });
+                }
+            });
+        }
+        });
+    
+    //pull user data then push new data
+    await users.deleteOne({ owner: currentOwner }, (err, result) => {
+        users.insertMany(userData, (err, result) => {
+            if (err) res.json({ error: err });
+            else res.json(result);
+        });
+    });
+
+
+});
+
 
 
 router.post('/allocate', (req, res, next) => {
@@ -182,8 +242,8 @@ router.post('/allocate', (req, res, next) => {
                     owner: currentUser.owner,
                     gateway: "",
                     in_use: false,
-                    pingable: true,
-                    hostname: "rochester"
+                    pingable: false,
+                    hostname: ""
                 }
 
                 var userIpObj = {
@@ -191,12 +251,17 @@ router.post('/allocate', (req, res, next) => {
                     gateway: "",
                     cidr: req.body.cidr,
                     in_use: false,
-                    hostname: "rochester",
-                    pingable: true
+                    hostname: "",
+                    pingable: false
                 }
 
                 IpsToAllocate.forEach(IpToAllocate => {
+
+                    //TODO check DNS and use new DNS to lookup hostname
                     ipamIpObj.ipaddress = userIpObj.ipaddress = IpToAllocate;
+                    dns.lookupService(IpToAllocate, 22, (err, hostname, service) => {
+                        ipamIpObj.hostname = userIpObj.hostname = hostname;
+                    });
 
                     ipams.updateOne({
                         network_id: currentNetwork.network_id
@@ -236,13 +301,12 @@ router.post('/allocate', (req, res, next) => {
                     res.json({
                         success: IpsToAllocate
                     });
-                }
-                else {
+                } else {
                     res.json({
                         error: IpsToAllocate
                     });
                 }
-                
+
             });
         }
     });
@@ -474,12 +538,11 @@ router.post('/deassign', (req, res, next) => {
 
         if (!invalidIP) {
             if (IpToDeassign) {
-                if(IpToDeassign.length > 0){
-                res.json({
-                    success: 'IPs are successfully deassigned' +IpToDeassign
-                });
-                }
-                else{
+                if (IpToDeassign.length > 0) {
+                    res.json({
+                        success: 'IPs are successfully deassigned' + IpToDeassign
+                    });
+                } else {
                     res.json({
                         error: emptyIPrange
                     });
