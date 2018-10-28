@@ -1,6 +1,8 @@
 const express = require('express');
+const util = require('util');
 const dns = require('dns');
 const router = express.Router();
+
 
 const users = require('../models/users');
 const ipams = require('../models/ipams');
@@ -11,48 +13,38 @@ const assignIP = require('../utils/assignIP');
 router.get('/getUser', (req, res, next) => {
     users.findOne({
         owner: req.query.username
-    }, (err, result) => {
-        if (err) res.json({
-            error: err
+    }).then(user => {
+        if (user) res.json(user)
+        else res.json({
+            error: 'User not found'
         });
-        else if (!result) res.json({
-            error: "User not found"
-        });
-        else {
-            res.json(result);
-        }
+    }).catch(e => {
+        res.json(e);
     });
+
 });
 
 router.get('/getNetworks', (req, res, next) => {
-    ipams.find({}, (err, result) => {
-        if (err) res.json({
-            error: err
+    ipams.find({}).then(networks => {
+        if (networks) res.json(networks);
+        else res.json({
+            error: 'No networks'
         });
-        else if (!result)
-            res.json({
-                error: "No networks available"
-            });
-        else {
-            res.json(result);
-        }
+    }).catch(e => {
+        res.json(e);
     });
 });
 
 router.get('/getNetwork', (req, res, next) => {
     ipams.find({
         network_id: req.query.network_id
-    }, (err, result) => {
-        if (err) res.json({
-            error: err
+    }).then(network => {
+        if (network) res.json(network);
+        else res.json({
+            error: 'Network unavailable'
         });
-        else if (!result)
-            res.json({
-                error: "Network not found"
-            });
-        else {
-            res.json(result);
-        }
+    }).catch(e => {
+        res.json(e);
     });
 });
 
@@ -67,13 +59,10 @@ router.post('/register', (req, res, next) => {
         networks: []
     });
 
-    newUser.save((err, result) => {
-        if (err) res.json({
-            error: err
-        });
-        else {
-            res.json(result);
-        }
+    newUser.save().then(result => {
+        res.json(result);
+    }).catch(e => {
+        res.json(e);
     });
 });
 
@@ -83,59 +72,57 @@ router.post('/addNetwork', (req, res, next) => {
         network_id: req.body.network_id,
         subnet_mask: req.body.subnet_mask,
         cidr: req.body.cidr,
+        dns1: req.body.dns1,
+        dns2: req.body.dn2,
+        dns_suffix: req.body.dns_suffix,
+        domain: req.body.domain,
         ip_pool: []
     });
 
-    newNetwork.save((err, result) => {
-        if (err) res.json({
-            error: err
-        });
-        else {
-            res.json(result);
-        }
+    newNetwork.save().then(result => {
+        res.json(result);
+    }).catch(e => {
+        res.json(e);
     });
 
 });
 
 router.post('/setHostname', async (req, res, next) => {
-    var currentNetwork, currentOwner;
+    try {
+        var currentNetwork, currentOwner;
 
-    //find the owner and network information of the ip to be updated. 
-    await ipams.findOne({
-        network_id: req.body.network_id
-    }, (err, result) => {
-        currentNetwork = result;
-        currentNetwork.ip_pool.forEach(address => {
-            if (address.ipaddress === req.body.ipaddress)
-                currentOwner = address.owner;
-        });
-    });
+        //find the owner and network information of the ip to be updated. 
+        await ipams.findOne({
+            network_id: req.body.network_id
+        }).then(result => {
+            currentNetwork = result;
+            currentNetwork.ip_pool.forEach(address => {
+                if (address.ipaddress === req.body.ipaddress)
+                    currentOwner = address.owner;
+            })
+        }).catch(e => {
+            throw new Error('Error in finding network');
+        })
 
-    //update hostname in ipams schema directly
-    await ipams.updateOne({
-        'ip_pool.ipaddress': req.body.ipaddress
-    }, {
-        $set: {
-            'ip_pool.$.hostname': req.body.customHostname
-        }
-    }, (err, result) => {
-        if (err) res.json({
-            error: err
-        });
-        else {
+
+        //update hostname in ipams schema directly
+        await ipams.updateOne({
+            'ip_pool.ipaddress': req.body.ipaddress
+        }, {
+            $set: {
+                'ip_pool.$.hostname': req.body.customHostname
+            }
+        }).then(result => {
             console.log(result);
-        }
-    });
-
-    //fetch and update users
-    var userData;
-    await users.findOne({
-        owner: currentOwner
-    }, (err, result) => {
-        if (err) res.json({
-            error: err
+        }).catch(e => {
+            throw new Error('Error in setting hostname in ipam schema');
         });
-        else {
+
+        //fetch and update users
+        var userData;
+        await users.findOne({
+            owner: currentOwner
+        }).then(result => {
             userData = result;
             userData.networks.forEach(network => {
                 if (network.network_id === currentNetwork.network_id) {
@@ -145,287 +132,318 @@ router.post('/setHostname', async (req, res, next) => {
                     });
                 }
             });
-        }
+        }).catch(e => {
+            throw new Error('Error in finding user');
         });
-    
-    //pull user data then push new data
-    await users.deleteOne({ owner: currentOwner }, (err, result) => {
-        users.insertMany(userData, (err, result) => {
-            if (err) res.json({ error: err });
-            else res.json(result);
-        });
-    });
 
 
+        //pull user data then push new data
+        await users.deleteOne({
+            owner: currentOwner
+        }).then(result => {
+            users.insertMany(userData).then(user => {
+                res.json(user)
+            }).catch(e => {
+                throw new Error('Error in inserting new user')
+            });
+        }).catch(e => {
+            throw new Error('Error in deleting user')
+        })
+    } catch (e) {
+        res.json({
+            error: e.message
+        })
+    }
 });
 
+router.post('/allocate', async (req, res, next) => {
+    try {
+        var currentUser;
+        var IpsToAllocate = [];
+        await users.findOne({
+                owner: req.body.username
+            })
+            .then(async (result) => {
+                //if user exists, store his data
+                currentUser = result;
 
-
-router.post('/allocate', (req, res, next) => {
-    var currentUser;
-
-    users.findOne({
-        owner: req.body.username,
-    }, (err, result) => {
-        if (err) res.json({
-            error: err
-        });
-        else {
-            //if user exists, store his data
-            currentUser = result;
-
-            if (!result) {
-                var pushNetwork = {
-                    network_id: req.body.network_id,
-                    subnet_mask: req.body.subnet_mask,
-                    cidr: req.body.cidr,
-                    ip_pool: []
-                }
-                // null check for user, create new user if new user. also add new network details while you're at it
-                let newUser = new users({
-                    owner: req.body.username,
-                    admin: true,
-                    networks: [pushNetwork]
-                });
-
-                newUser.save((err, result) => {
-                    if (err) res.json({
-                        error: err
-                    });
-                    else {
-                        console.log(result);
+                if (!currentUser) {
+                    console.log('No user found , creating new user');
+                    var pushNetwork = {
+                        network_id: req.body.network_id,
+                        subnet_mask: req.body.subnet_mask,
+                        cidr: req.body.cidr,
+                        ip_pool: []
                     }
-                });
-                console.log('No user found , creating new user');
-                currentUser = newUser;
-            }
+                    // null check for user, create new user if new user. also add new network
+                    // details while you're at it
+                    currentUser = new users({
+                        owner: req.body.username,
+                        admin: true,
+                        networks: [pushNetwork]
+                    });
 
-
-
-            //if network is not present in users schema, then create new network with empty ip_pool
-            var networkExists = false;
-            for (network of currentUser.networks) {
-                if (network.network_id == req.body.network_id) {
-                    networkExists = true;
-                    break;
+                    //TODO put a check if it is IP address or not
+                    currentUser
+                        .save()
+                        .then(saved => {
+                            console.log(saved);
+                        })
+                        .catch(e => {
+                            throw new Error('Error in saving new user');
+                        });
                 }
-            }
-            //this is for existing user but new network
-            if (!networkExists) {
-                var pushNetwork = {
-                    network_id: req.body.network_id,
-                    subnet_mask: req.body.subnet_mask,
-                    ip_pool: []
-                }
-                users.updateOne({
-                    owner: currentUser.owner
-                }, {
-                    $push: {
-                        networks: pushNetwork
+
+                // if network is not present in users schema, then create new network with empty
+                // ip_pool
+                var networkExists = false;
+                for (network of currentUser.networks) {
+                    if (network.network_id == req.body.network_id) {
+                        networkExists = true;
+                        break;
                     }
-                }, (err, result) => {
-                    console.log('New network created as network not found in users');
-                });
-            }
-
-            var currentNetwork;
-
-            ipams.findOne({
-                network_id: req.body.network_id
-            }, (err, result) => {
-                currentNetwork = result;
-
-                var IpsToAllocate = allocateIP(currentNetwork, req.body.ipRange);
-
-                var ipamIpObj = {
-                    ipaddress: "",
-                    owner: currentUser.owner,
-                    gateway: "",
-                    in_use: false,
-                    pingable: false,
-                    hostname: ""
                 }
 
-                var userIpObj = {
-                    ipaddress: "",
-                    gateway: "",
-                    cidr: req.body.cidr,
-                    in_use: false,
-                    hostname: "",
-                    pingable: false
-                }
+                let networkValid = false;
 
-                IpsToAllocate.forEach(IpToAllocate => {
+                await ipams.findOne({
+                    network_id: req.body.network_id
+                }).then(result => {
+                    if (result) networkValid = true;
+                    else throw new Error('Network entered doesnt exist');
+                }).catch(e => {
+                    throw new Error('Network entered doesnt exist');
+                })
 
-                    //TODO check DNS and use new DNS to lookup hostname
-                    ipamIpObj.ipaddress = userIpObj.ipaddress = IpToAllocate;
-                    dns.lookupService(IpToAllocate, 22, (err, hostname, service) => {
-                        ipamIpObj.hostname = userIpObj.hostname = hostname;
-                    });
-
-                    ipams.updateOne({
-                        network_id: currentNetwork.network_id
-                    }, {
-                        $push: {
-                            ip_pool: ipamIpObj
-                        }
-                    }, (err, result) => {
-                        if (err) {
-                            res.json({
-                                error: "Network not found"
-                            });
-                        } else {
-
-                        }
-                    });
-
+                //this is for existing user but new network
+                if (!networkExists) {
+                    var pushNetwork = {
+                        network_id: req.body.network_id,
+                        subnet_mask: req.body.subnet_mask,
+                        ip_pool: []
+                    }
                     users.updateOne({
-                        owner: currentUser.owner,
-                        'networks.network_id': currentNetwork.network_id
+                        owner: currentUser.owner
                     }, {
                         $push: {
-                            'networks.$.ip_pool': userIpObj
+                            networks: pushNetwork
                         }
-                    }, (err, result) => {
-                        if (err) {
-                            res.json({
-                                error: "User not found"
-                            });
-                        } else {
-                            console.log(result);
-                            console.log(IpToAllocate + '=>' + currentUser.owner);
-                        }
-                    });
-                });
-                if (IpsToAllocate) {
-                    res.json({
-                        success: IpsToAllocate
-                    });
-                } else {
-                    res.json({
-                        error: IpsToAllocate
-                    });
+                    }).then(network => {
+                        console.log('New network created as network not found in users schema');
+                    }).catch(e => {
+                        throw new Error('Error in creating new network in users schema');
+                    })
                 }
 
-            });
-        }
-    });
+                var currentNetwork;
 
+                await ipams.findOne({
+                        network_id: req.body.network_id
+                    })
+                    .then(async (result) => {
+                        currentNetwork = result;
+                        dns.setServers([currentNetwork.dns1]);
+                        IpsToAllocate = allocateIP(currentNetwork, req.body.ipRange);
+                        if (IpsToAllocate) {
+                            IpsToAllocate.forEach(IpToAllocate => {
+                                var dnsHostname = null;
+
+                                dns.reverse(IpToAllocate, async (err, hostname) => {
+                                    if (err) {
+
+                                        console.log('hostname->' + hostname);
+                                        var ipamIpObj = {
+                                            ipaddress: IpToAllocate,
+                                            owner: currentUser.owner,
+                                            in_use: false,
+                                            pingable: false,
+                                            hostname: null
+                                        }
+
+                                        var userIpObj = {
+                                            ipaddress: IpToAllocate,
+                                            cidr: req.body.cidr,
+                                            in_use: false,
+                                            hostname: null,
+                                            pingable: false
+                                        }
+
+                                        await ipams.updateOne({
+                                            network_id: currentNetwork.network_id
+                                        }, {
+                                            $push: {
+                                                ip_pool: ipamIpObj
+                                            }
+                                        }).then(result => {
+                                            console.log(result);
+                                        }).catch(e => {
+                                            throw new Error('Error in updating network schema -- hostname null');
+                                        })
+
+                                        await users.updateOne({
+                                            owner: currentUser.owner,
+                                            'networks.network_id': currentNetwork.network_id
+                                        }, {
+                                            $push: {
+                                                'networks.$.ip_pool': userIpObj
+                                            }
+                                        }).then(result => {
+                                            console.log(result);
+                                            console.log(IpToAllocate + '=>' + currentUser.owner);
+                                        }).catch(e => {
+                                            throw new Error('Error in updating users schema -- hostname null')
+                                        })
+                                    } else {
+                                        dnsHostname = hostname;
+                                        console.log('hostname->' + hostname);
+                                        var ipamIpObj = {
+                                            ipaddress: IpToAllocate,
+                                            owner: currentUser.owner,
+                                            in_use: false,
+                                            pingable: false,
+                                            hostname: dnsHostname
+                                        }
+
+                                        var userIpObj = {
+                                            ipaddress: IpToAllocate,
+                                            cidr: req.body.cidr,
+                                            in_use: false,
+                                            hostname: dnsHostname,
+                                            pingable: false
+                                        }
+
+                                        ipams.updateOne({
+                                            network_id: currentNetwork.network_id
+                                        }, {
+                                            $push: {
+                                                ip_pool: ipamIpObj
+                                            }
+                                        }).then(result => {
+                                            console.log(result);
+                                        }).catch(e => {
+                                            throw new Error('Error in updating ipams schema -- hostname found');
+                                        })
+
+                                        users.updateOne({
+                                            owner: currentUser.owner,
+                                            'networks.network_id': currentNetwork.network_id
+                                        }, {
+                                            $push: {
+                                                'networks.$.ip_pool': userIpObj
+                                            }
+                                        }).then(result => {
+                                            console.log(result);
+                                            console.log(IpToAllocate + '=>' + currentUser.owner);
+                                        }).catch(e => {
+                                            throw new Error('Error in updating users schema -- hostname found')
+                                        })
+                                    }
+                                });
+                            });
+                        } else {
+                            throw new Error('No IPs available to allocate');
+                        }
+                    })
+            })
+    } catch (e) {
+        res.json({
+            error: e.message
+        });
+    }
 });
 
 router.post('/assign', (req, res, next) => {
-    users.findOne({
-        owner: req.body.username
-    }, (err, result) => {
-        var currentUser = result;
-        var currentUserNetwork = undefined;
-        var assignIps = [];
-        var insufficientIP = '';
-        var emptyPool = '';
-        //will get the network to be worked on currently
-        for (network of currentUser.networks) {
-            if (network.network_id === req.body.network_id)
-                currentUserNetwork = network;
-        }
-        var IpToAssign = [];
-        IpToAssign = assignIP(currentUserNetwork, req.body.count);
-        if (IpToAssign) {
-            if (IpToAssign.length > 0) {
-                //will populate the assignIps array and edit the Network object of user
-                for (requestedIp of IpToAssign) {
-                    for (pool of currentUserNetwork.ip_pool) {
-                        if (requestedIp === pool.ipaddress) {
-                            assignIps.push(requestedIp);
-                            pool.in_use = true;
-                        }
+    try {
+        users.findOne({
+            owner: req.body.username
+        }).then(result => {
+            if (!result) throw new Error('User does not exist');
+            else {
+                var currentUser = result;
+                var validNetwork = false;
+                var currentUserNetwork = undefined;
+                var assignIps = [];
+                var insufficientIP = '';
+                var emptyPool = '';
+                //will get the network to be worked on currently
+                for (network of currentUser.networks) {
+                    if (network.network_id === req.body.network_id) {
+                        currentUserNetwork = network;
+                        validNetwork = true;
                     }
                 }
-                ipams.findOne({
-                    network_id: req.body.network_id
-                }, (err, result) => {
-                    assignIps.forEach(ip => {
-                        //update the IPAMS collection
-                        ipams.updateOne({
-                            'ip_pool.ipaddress': ip
-                        }, {
-                            $set: {
-                                'ip_pool.$.in_use': true
+
+                if (!validNetwork) throw new Error('Network not used by user');
+
+                var IpsToAssign = [];
+                IpsToAssign = assignIP(currentUserNetwork, req.body.count);
+                if (IpsToAssign) {
+                    if (IpsToAssign.length > 0) {
+                        //will populate the assignIps array and edit the Network object of user
+                        for (requestedIp of IpsToAssign) {
+                            for (pool of currentUserNetwork.ip_pool) {
+                                if (requestedIp === pool.ipaddress) {
+                                    assignIps.push(requestedIp);
+                                    pool.in_use = true;
+                                }
                             }
-                        }, (err, result) => {
-                            if (err) res.json({
-                                error: err
-                            });
-                            else if (!result) res.json({
-                                error: 'No such IP found'
-                            });
-                            else {
-                                console.log('ipams collection updated -> ' + result);
-                            }
-                        });
-                    });
-                });
-                //pull old network
-                users.updateOne({
-                    owner: currentUser.owner
-                }, {
-                    $pull: {
-                        networks: {
-                            network_id: currentUserNetwork.network_id
                         }
-                    }
-                }, (err, result) => {
-                    if (err) res.json({
-                        error: err
-                    });
-                    else if (!result) res.json({
-                        error: 'No such user found'
-                    });
-                    else {
-                        //push new network
+                        ipams.findOne({
+                            network_id: req.body.network_id
+                        }).then(async (result) => {
+                            for (ip of assignIps) {
+                                //update the IPAMS collection
+                                await ipams.updateOne({
+                                    'ip_pool.ipaddress': ip
+                                }, {
+                                    $set: {
+                                        'ip_pool.$.in_use': true
+                                    }
+                                }).then(result => {
+                                    if (!result) throw new Error('Nothing was updated in IPAMs schema');
+                                    else console.log('ipams collection updated -> ' + result);
+                                })
+                            };
+                        })
+                        //pull old network
                         users.updateOne({
                             owner: currentUser.owner
                         }, {
-                            $push: {
-                                networks: currentUserNetwork
+                            $pull: {
+                                networks: {
+                                    network_id: currentUserNetwork.network_id
+                                }
                             }
-                        }, (err, result) => {
-                            if (err) res.json({
-                                error: err
-                            });
-                            else if (!result) res.json({
-                                error: 'No such user found'
-                            });
-                            else {
+                        }).then(result => {
+                            //push new network
+                            users.updateOne({
+                                owner: currentUser.owner
+                            }, {
+                                $push: {
+                                    networks: currentUserNetwork
+                                }
+                            }).then(result => {
+                                if (!result) throw new Error('Nothing was updated in users schema');
                                 console.log('users collection updated')
-                            }
-                        });
+                            })
+                        })
+                    } else {
+                        throw new Error('Requested no of IPs are more than existing free ips in pool')
+                        //console.log('Requested no of IPS are more than existing free ips in pool');
                     }
-                });
-            } else {
-                insufficientIP = 'Requested no of IPs are more than existing free ips in pool'
-                //console.log('Requested no of IPS are more than existing free ips in pool');
+                } else {
+                    throw new Error('No free ips in your pool');
+                    //console.log('There are no free ips in  your current pool');
+                }
             }
-        } else {
-            emptyPool = 'No free ips in your pool'
-            //console.log('There are no free ips in  your current pool');
-        }
-        if (IpToAssign) {
-            if (IpToAssign.length > 0) {
-                res.json({
-                    success: IpToAssign
-                });
-            } else {
-                res.json({
-                    error: insufficientIP
-                })
-            }
-        } else {
-            res.json({
-                error: emptyPool
-            });
-        }
-    });
+        })
+    } catch (e) {
+        res.json({
+            error: e
+        });
+    }
 });
+
 //write the logic of checking whether already ips are deassigned or not.
 router.post('/deassign', (req, res, next) => {
     users.findOne({
@@ -603,6 +621,93 @@ router.post('/deallocate', (req, res, next) => {
             }
         });
     });
+
+});
+
+router.post('/setDNS', (req, res, next) => {
+    var currentUserNetwork, currentOwner, allUserNetworks, finalResult, allNetworks, allUsers;
+    users.find({
+        'networks.network_id': req.body.network_id
+    }, async (err, result) => {
+        if (err) {
+            console.log(err)
+        } else if (!result) res.json({
+            error: 'No such user found'
+        });
+        else {
+            allUsers = result;
+            //console.log(allUsers.length)
+            // allUsers.forEach(async(user) => {
+            for (user of allUsers) {
+                allNetworks = user.networks;
+                currentOwner = user.owner;
+                //console.log(currentOwner)
+                //search for user's network whose DNS needs to be changed
+                allNetworks.forEach(network => {
+                    if (network.network_id === req.body.network_id) {
+                        currentUserNetwork = network;
+                    }
+                });
+
+                //Set DNS and run reverse method to update hostname
+                const reverseAsync = util.promisify(dns.reverse);
+                dns.setServers([req.body.dns1]);
+
+                //currentUserNetwork.ip_pool.forEach( async(ipObject) => {
+                for (ipObject of currentUserNetwork.ip_pool) {
+
+                    try {
+                        ipObject.hostname = await reverseAsync(ipObject.ipaddress);
+                    } catch (e) {
+                        console.log(e);
+                    }
+
+                    //pull ipobject 
+                    await users.updateOne({
+                        owner: currentOwner,
+                        'networks.network_id': currentUserNetwork.network_id
+                    }, {
+                        $pull: {
+                            'networks.$.ip_pool': {
+                                ipaddress: ipObject.ipaddress
+                            }
+                        }
+                    }, (err, result) => {
+                        if (err) console.log(err)
+                        else if (!result) res.json({
+                            error: 'No such user found'
+                        });
+                        else {
+                            //push new ipobject with updated hostname
+                            console.log(currentUserNetwork.network_id)
+                            users.updateOne({
+                                owner: currentOwner,
+                                'networks.network_id': currentUserNetwork.network_id
+                            }, {
+                                $push: {
+                                    'networks.$.ip_pool': ipObject
+                                }
+                            }, (err, result) => {
+                                if (err) console.log(err)
+                                else if (!result) res.json({
+                                    error: 'No such user found'
+                                });
+                                else {
+                                    finalResult = result;
+                                    console.log('users collection updated' + result)
+                                }
+                            });
+                        }
+                    });
+                }
+                //res.json(result); //does not print updated entries.
+                //});
+                console.log("first user is updated")
+            }
+
+        }
+    })
+
 
 });
 

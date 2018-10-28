@@ -6,6 +6,10 @@ const ipamSchema = new Schema({
     network_id: String,
     subnet_mask: String,
     cidr: String,
+    dns1: String,
+    dns2: String,
+    dns_suffix: String,
+    domain: String,
     ip_pool: [{
         ipaddress: String,
         owner: String,
