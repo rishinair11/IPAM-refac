@@ -25,7 +25,7 @@ function allocateIP(currentNetwork, ipRange) {
         }
     }
         
-    console.log(invalidRange);
+    console.log("Valid Range? " + !invalidRange);
     
     if (invalidRange)
         return null;
